@@ -4,6 +4,8 @@ from jose import jwt, JWTError
 from datetime import datetime, timedelta
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi import Depends, HTTPException, status
+from passlib.context import CryptContext
+import bcrypt
 
 
 app = FastAPI(
@@ -16,10 +18,18 @@ algoritmo = "HS256"
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl = "login")
 
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def hash_senha(senha):
+    senha = senha[:72]
+    hashed = bcrypt.hashpw(senha.encode('utf-8'), bcrypt.gensalt())
+    return hashed.decode('utf-8')  
+
 user_db = {
     "admin" : {
         "username": "admin",
-        "password": "1234",
+        "password": hash_senha("1234"),
+        "role": "admin"
     }
 }
 
@@ -33,6 +43,10 @@ class token(BaseModel):
     token_type: str
 
 estoque = []
+
+def verify_senha(plain_senha, hashed_senha):
+    plain_senha = plain_senha[:72]
+    return bcrypt.checkpw(plain_senha.encode('utf-8'), hashed_senha.encode('utf-8'))
 
 def verificar_token(token: str):
     try:
@@ -49,7 +63,7 @@ def verificar_token(token: str):
     except JWTError:
         raise HTTPException(
             status_code = status.HTTP_401_UNAUTHORIZED,
-            detail = "Token inválido ou expirado",
+            detail = "Token inválido ou expirado", 
             headers = {"WWW-Authenticate": "Bearer"},
         )
 
@@ -72,17 +86,19 @@ async def login(form: OAuth2PasswordRequestForm = Depends()):
     if not user:
         raise HTTPException(status_code=400, detail="Usuário não encontrado")
     
-    if form.password != user["password"]:
+    if not verify_senha(form.password, user["password"]):
         raise HTTPException(status_code=400, detail="Senha incorreta")
 
-    dados_token = {"sub": form.username}
+    dados_token = {
+        "sub": form.username,
+        "role": user["role"]
+    }
+
     token_expire = timedelta(minutes = 30)
 
     access_token = criar_token(data = dados_token, expire_time = token_expire)
     
     return {"access_token": access_token, "token_type": "bearer"}
-
-
 
 @app.post("/produtos/post")
 async def adicionar_produto(produto: produto, token: str = Depends(oauth2_scheme)):
@@ -109,7 +125,7 @@ async def deletar_produto(produto_id: int, token: str = Depends(oauth2_scheme)):
     for produto in estoque:
         if produto["id"] == produto_id:
             estoque.remove(produto)
-            return {"message": "Produto removido com sucesso"}
+            return {"message": "Produto removido com sucesso"} 
         
     return {"message": "Produto não encontrado"}
 
