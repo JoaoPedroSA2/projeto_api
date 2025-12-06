@@ -6,11 +6,11 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi import Depends, HTTPException, status
 from passlib.context import CryptContext
 import bcrypt
-from sqlalchemy import Session, create_engine
+from sqlalchemy import create_engine
 from sqlalchemy import Column, Integer, Float
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.orm import sessionmaker, declarative_base, Session
 from sqlalchemy import String
-from models import ProdutoModel
+from typing import List
 
 #------------config basica do FastAPI----------------
 app = FastAPI(
@@ -54,6 +54,19 @@ class produto(BaseModel):
     nome: str
     preco_unitario: float
     quantidade: int
+
+class produtoresponse(BaseModel):
+    id: int
+    nome : str
+    preco_unitario: float
+    quantidade: int
+
+    class config:
+        orm_mode = True
+
+class ProdutoCriadoResponse(BaseModel):
+    msg: str
+    produto : produtoresponse
 
 class token(BaseModel):
     access_token: str
@@ -143,11 +156,11 @@ async def login(form: OAuth2PasswordRequestForm = Depends()):
     
     return {"access_token": access_token, "token_type": "bearer"}
 
-@app.post("/produtos/post")
+@app.post("/produtos/post", response_model = ProdutoCriadoResponse)
 async def adicionar_produto(produto: produto, db: Session = Depends(get_db),token: str = Depends(oauth2_scheme)):
     verificar_token(token)
     
-    novo= produtodb(
+    novo = produtodb(
         nome = produto.nome,
         preco_unitario = produto.preco_unitario,
         quantidade = produto.quantidade,
@@ -157,9 +170,9 @@ async def adicionar_produto(produto: produto, db: Session = Depends(get_db),toke
     db.commit()
     db.refresh(novo)
     
-    return {"message": "Produto adicionado com sucesso", "produto": novo.__dict__}
+    return {"msg": "Produto adicionado com sucesso", "produto": novo}
 
-@app.get("/produtos")
+@app.get("/produtos", response_model = List[produtoresponse])
 async def read_produtos(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     verificar_token(token)
     produtos = db.query(produtodb).all()
