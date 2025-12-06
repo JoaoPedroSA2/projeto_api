@@ -6,8 +6,13 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi import Depends, HTTPException, status
 from passlib.context import CryptContext
 import bcrypt
+from sqlalchemy import Session, create_engine
+from sqlalchemy import Column, Integer, Float
+from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy import String
+from models import ProdutoModel
 
-
+#------------config basica do FastAPI----------------
 app = FastAPI(
     title = "My API",
     description = "This is a sample API"
@@ -19,30 +24,48 @@ algoritmo = "HS256"
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl = "login")
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+##------------------------
 
-def hash_senha(senha):
-    senha = senha[:72]
-    hashed = bcrypt.hashpw(senha.encode('utf-8'), bcrypt.gensalt())
-    return hashed.decode('utf-8')  
+##---------------- banco de dados ------------------
+dataurl = "sqlite:///./bancodados.db"  
 
-user_db = {
-    "admin" : {
-        "username": "admin",
-        "password": hash_senha("1234"),
-        "role": "admin"
-    }
-}
+engine = create_engine(dataurl, connect_args={"check_same_thread": False})
 
+sessionlocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+##--------------------------
+
+##--------------Modelo do banco ---------------
+Base = declarative_base()
+
+class produtodb(Base):
+    __tablename__ = "produtos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nome = Column(String(100))
+    preco_unitario = Column(Float)
+    quantidade = Column(Integer)
+
+Base.metadata.create_all(bind=engine)
+## ------------------------------------
+
+##------------Modelo pydantic ----------------
 class produto(BaseModel):
-    nome : str
-    preco_unitario : float
-    quantidade : int
+    nome: str
+    preco_unitario: float
+    quantidade: int
 
 class token(BaseModel):
     access_token: str
     token_type: str
+#_-------------------------------
 
-estoque = []
+
+#--------Funções de autenticação e segurança ---------
+def hash_senha(senha):
+    senha = senha[:72]
+    hashed = bcrypt.hashpw(senha.encode('utf-8'), bcrypt.gensalt())
+    return hashed.decode('utf-8')  
 
 def verify_senha(plain_senha, hashed_senha):
     plain_senha = plain_senha[:72]
@@ -78,7 +101,27 @@ def criar_token(data: dict,expire_time:timedelta | None = None):
     encode_jwt = jwt.encode(to_encode, secretkey, algorithm = algoritmo)
     
     return encode_jwt
+
+def get_db():
+    db = sessionlocal()
+    try:
+        yield db
+    finally:
+        db.close()
     
+#--------------------------------------------------
+
+#-----------------Usuário e autenticação ---------------
+user_db = {
+    "admin" : {
+        "username": "admin",
+        "password": hash_senha("1234"),
+        "role": "admin"
+    }
+}
+#-------------------------------------------
+
+#------------------Rotas FastAPI-------------------
 @app.post("/login", response_model = token)
 async def login(form: OAuth2PasswordRequestForm = Depends()):
     user = user_db.get(form.username)
@@ -101,31 +144,44 @@ async def login(form: OAuth2PasswordRequestForm = Depends()):
     return {"access_token": access_token, "token_type": "bearer"}
 
 @app.post("/produtos/post")
-async def adicionar_produto(produto: produto, token: str = Depends(oauth2_scheme)):
+async def adicionar_produto(produto: produto, db: Session = Depends(get_db),token: str = Depends(oauth2_scheme)):
     verificar_token(token)
     
-    novo_produto = {
-        "nome": produto.nome,
-        "preco_unitario": produto.preco_unitario,
-        "quantidade": produto.quantidade,
-        "id": len(estoque) + 1
-    }
-    estoque.append(novo_produto)
+    novo= produtodb(
+        nome = produto.nome,
+        preco_unitario = produto.preco_unitario,
+        quantidade = produto.quantidade,
+    )
+
+    db.add(novo)
+    db.commit()
+    db.refresh(novo)
     
-    return {"message": "Produto adicionado com sucesso", "produto": novo_produto}
+    return {"message": "Produto adicionado com sucesso", "produto": novo.__dict__}
 
 @app.get("/produtos")
-async def read_produtos(token: str = Depends(oauth2_scheme)):
-    return estoque
+async def read_produtos(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    verificar_token(token)
+    produtos = db.query(produtodb).all()
+    return produtos
 
 @app.delete("/produto/delete/{produto_id}")
-async def deletar_produto(produto_id: int, token: str = Depends(oauth2_scheme)):
+async def deletar_produto(produto_id: int, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     verificar_token(token)
-
-    for produto in estoque:
-        if produto["id"] == produto_id:
-            estoque.remove(produto)
-            return {"message": "Produto removido com sucesso"} 
+    
+    produto = db.query(produtodb).filter(produtodb.id == produto_id).first()
         
-    return {"message": "Produto não encontrado"}
+    if not produto:
+        raise HTTPException(status_code=404, detail="Produto não encontrado")
+    
+    db.delete(produto)
+    db.commit()
+    return {"message": "Produto deletado com sucesso"}
+
+@app.middleware("http")
+async def log_requests(request, call_next):
+    print(f"Request: {request.method} {request.url}")
+    response = await call_next(request)
+    print(f"Response status: {response.status_code}")
+    return response
 
