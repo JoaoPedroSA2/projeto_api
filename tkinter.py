@@ -7,6 +7,7 @@ token = ""
 
 #----------- config grafica--------------
 root = tk.Tk()
+root.configure(bg="darkgray")
 root.title("frontend API Tkinter")
 root.geometry("600x600")
 #-----------------------------------------
@@ -133,7 +134,7 @@ def remover_produto():
 
 
 #------------campo de login ----------------
-frame_login = tk.Frame(root)
+frame_login = tk.Frame(root, bg = "darkgray")
 frame_login.pack(fill = "both", expand = True)
 
 tk.Label(frame_login, text="Usuario:").pack()
@@ -149,7 +150,7 @@ btn_login.pack(pady=10)
 #-----------------------------------------------------------
 
 #------------frame de produtos ----------------
-frame_produtos = tk.Frame(root)
+frame_produtos = tk.Frame(root, bg = "darkgray")
 #-----------------------------------------------------------
 
 #---------------lista de produtos ----------------
@@ -183,7 +184,7 @@ tk.Label(frame_produtos, text="ID do produto para deletar:").pack()
 entry_delete = tk.Entry(frame_produtos)
 entry_delete.pack()
 
-tk.Button(frame_produtos, text="Deletar Produto", command=remover_produto).pack(pady=5)
+tk.Button(frame_produtos, text="Deletar Produto", fg = "red", command=remover_produto).pack(pady=5)
 #-----------------------------------------------------------
 
 #------------loop grafico----------------
