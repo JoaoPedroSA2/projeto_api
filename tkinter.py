@@ -1,4 +1,5 @@
 import tkinter as tk
+from tkinter import ttk
 from tkinter import messagebox
 import requests
 
@@ -59,10 +60,12 @@ def lista_produto():
     
     if resp.status_code == 200:
         produtos = resp.json()
-        lista.delete(0,tk.END)
+    
+        for item in tabela.get_children():
+            tabela.delete(item)
 
         for p in produtos:
-            lista.insert(tk.END, f"ID: {p['id']} - Nome: {p['nome']} - Preço: {p['preco_unitario']} - Quantidade: {p['quantidade']}")
+            tabela.insert("","end",values=(p["id"],p["nome"],p["preco_unitario"],p["quantidade"])) 
     else:
         erro = resp.text
         messagebox.showwarning("Aviso", f"Erro ao buscar produtos:{erro}")
@@ -148,19 +151,17 @@ def toggle_senha():
         entry_pass.config(show="")
 
 def editar_produto():
-    try:
-        selected = lista.get(lista.curselection()) #pega item selecionado
-        id_produto = selected.split(" - ")[0].replace("ID: ", "") #pega id do produto
-    except:
+    item = tabela.focus()
+    valores = tabela.item(item, "values")
+    
+    if not valores:
         messagebox.showwarning("Aviso", "Por favor, selecione um produto para editar.")
         return
-    
-    partes = selected.split(" - ")
 
-    id_ = partes[0].replace("ID: ", "") 
-    nome = partes[1].replace("Nome: ", "")
-    preco = partes[2].replace("Preço: ", "")
-    quantidade = partes[3].replace("Quantidade: ", "")
+    id_ = valores[0]
+    nome = valores[1]
+    preco = valores[2]
+    quantidade = valores[3]
 
     global produto_id_editado
     produto_id_editado = id_
@@ -210,7 +211,9 @@ def salvar_edicao():
 
 def buscar_produto():
     termo = entry_buscar.get().lower()
-    lista.delete(0, tk.END)
+    
+    for item in tabela.get_children():
+        tabela.delete(item)
 
     if not termo:
         messagebox.showwarning("Aviso", "Por favor, insira um termo para buscar.")
@@ -220,17 +223,70 @@ def buscar_produto():
 
     try:
         resp = requests.get(f"{API_URL}/produtos", headers=headers)
+
+        if resp.status_code == 200:
+            produtos = resp.json()
+            for p in produtos:
+                if termo in p['nome'].lower() or termo == str(p['id']):
+                    tabela.insert("","end", values = (p["id"], p["nome"], p["preco_unitario"], p["quantidade"]))
     except Exception as e:
         messagebox.showerror("Erro", f"Erro ao conectar à API: {e}")
         return
+    
+def esconde_sugestao():
+    listbox_autocomplete.place_forget()
 
-    if resp.status_code == 200:
+def selecionar_sugestao(event):
+    try:
+        item = listbox_autocomplete.get(listbox_autocomplete.curselection())
+    except:
+        return 
+    entry_buscar.delete(0, tk.END)
+    entry_buscar.insert(0, item)
+    esconde_sugestao()
+
+def autocomplete(event):
+    termo = entry_buscar.get().lower()
+    listbox_autocomplete.delete(0,tk.END)
+
+    if not termo:
+        esconde_sugestao()
+        return
+    if not token:
+        return
+    
+    headers = {"Authorization": f"Bearer {token}"}
+
+    try:
+        resp = requests.get(f"{API_URL}/produtos", headers=headers)
+        if resp.status_code != 200:
+            esconde_sugestao()
+            return
         produtos = resp.json()
-        for p in produtos:
-            if termo in p['nome'].lower() or termo == str(p['id']):
-                lista.insert(tk.END, f"ID: {p['id']} - Nome: {p['nome']} - Preço: {p['preco_unitario']} - Quantidade: {p['quantidade']}")
-#-----------------------------------------
+    except:
+        esconde_sugestao()
+        return
 
+    sugestoes = [p['nome'] for p in produtos if p['nome'].lower().startswith(termo)]
+
+    if not sugestoes:
+        esconde_sugestao()
+        return
+    for s in sugestoes:
+        listbox_autocomplete.insert(tk.END, s)
+
+    offset = 10
+    x = entry_buscar.winfo_rootx() - offset
+    y = entry_buscar.winfo_y() + entry_buscar.winfo_height()
+    w = entry_buscar.winfo_width()
+
+    listbox_autocomplete.place(x=x, y=y, width=w)
+
+def click_fora(event):
+        if event.widget not in (entry_buscar, listbox_autocomplete):
+            esconde_sugestao()
+
+#-----------------------------------------
 
 #------------campo de login ----------------
 frame_login = tk.Frame(root, bg = "darkgray")
@@ -252,16 +308,34 @@ btn_login.pack(pady=10)
 frame_produtos = tk.Frame(root, bg = "darkgray")
 #-----------------------------------------------------------
 
+#------------------listbox autocomplete-----------
+listbox_autocomplete = tk.Listbox(frame_produtos, height=5, bg = "white")
+listbox_autocomplete.place_forget()  # Inicialmente, esconde a listbox
+#--------------------------------------------------
+
 #---------------lista de produtos ----------------
-btn_produto = tk.Button(frame_produtos, text="Listar Produtos", command=lista_produto)
+btn_produto = tk.Button(frame_produtos, text="Listar Produtos", fg = "green", command=lista_produto)
 btn_produto.pack(anchor = "nw", pady=10, padx = 10)
 
-scrollbar = tk.Scrollbar(frame_produtos)
-scrollbar.pack(side = "right", fill= "y")
+colunas = ("ID", "Nome", "Preço", "Quantidade")
 
-lista = tk.Listbox(frame_produtos, width = 100,yscrollcommand=scrollbar.set)
-lista.pack(pady=10, padx = 10, anchor = "nw")
-scrollbar.config(command=lista.yview)
+tabela = ttk.Treeview(frame_produtos, columns=colunas, show="headings")
+
+tabela.heading("ID", text="ID")
+tabela.heading("Nome", text="Nome")
+tabela.heading("Preço", text="Preço")
+tabela.heading("Quantidade", text="Quantidade")
+
+tabela.column("ID", width=50)
+tabela.column("Nome", width=200)
+tabela.column("Preço", width=120)
+tabela.column("Quantidade", width=120)
+
+tabela.pack(pady=10, padx=10, anchor="nw")
+
+scrollbar = ttk.Scrollbar(frame_produtos, orient="vertical", command=tabela.yview)
+tabela.configure(yscrollcommand=scrollbar.set)
+scrollbar.pack(side="right", fill="y")
 
 #-----------------------------------------------------------
 
@@ -278,7 +352,7 @@ tk.Label(frame_produtos, text="Quantidade:").pack(anchor="sw")
 entry_quantidade = tk.Entry(frame_produtos)
 entry_quantidade.pack(anchor="sw")
 
-btn_add_produto = tk.Button(frame_produtos, text="Adicionar Produto", command=adicionar_produto)
+btn_add_produto = tk.Button(frame_produtos, text="Adicionar Produto", fg = "green", command=adicionar_produto)
 btn_add_produto.pack(pady=5, anchor="sw")
 #----------------------------------------------------
 
@@ -298,28 +372,34 @@ chk_senha.pack()
 #------------ botao editar produto ----------------
 tk.Label(frame_produtos, text="Editar Produto:").pack(anchor="sw")
 
-btn_editar = tk.Button(frame_produtos, text = "Editar produto", command = editar_produto)
+btn_editar = tk.Button(frame_produtos, text = "Editar produto", fg = "green", command = editar_produto)
 btn_editar.pack(pady = 5, anchor = "sw")
 
 #--------------------------------------------------------
 
 #---------------- Salvar ------------------
-btn_salvar = tk.Button(frame_produtos, text="Salvar", command=salvar_edicao)
+btn_salvar = tk.Button(frame_produtos, text="Salvar",fg = "green", command=salvar_edicao)
 btn_salvar.pack(pady=5, anchor="sw")
 
 #------------ campo de buscar produto ----------------
 tk.Label(frame_produtos, text="Buscar produto:").pack(anchor="sw")
 entry_buscar = tk.Entry(frame_produtos)
-entry_buscar.pack(pady = 5, anchor="sw")
+entry_buscar.place(x= 10, y = 650, width=250)
 
-btn_buscar = tk.Button(frame_produtos, text = "Buscar produto", command = buscar_produto)
-btn_buscar.pack(pady = 5, anchor = "sw")
+btn_buscar = tk.Button(frame_produtos, text = "Buscar produto",fg = "green", command = buscar_produto)
+btn_buscar.place(x = 270,y = 650)
 #--------------------------------------------------
 
 #------------ botao logout ----------------
 btn_logout = tk.Button(frame_produtos, text="Logout", bg = "red", fg = "white",command=logout)
 btn_logout.pack(pady=10, anchor="se")
 #--------------------------------------------------------------
+
+#------------------binds autocomplete----------------------
+entry_buscar.bind("<KeyRelease>", autocomplete)
+listbox_autocomplete.bind("<<ListboxSelect>>", selecionar_sugestao)
+root.bind("<Button-1>", lambda e: esconde_sugestao() if e.widget not in (entry_buscar, listbox_autocomplete) else None)
+#--------------------------------------------
 
 #------------loop grafico----------------
 root.mainloop()
