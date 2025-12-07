@@ -172,6 +172,24 @@ async def adicionar_produto(produto: produto, db: Session = Depends(get_db),toke
     
     return {"msg": "Produto adicionado com sucesso", "produto": novo}
 
+@app.put("/produtos/{produto_id}")
+async def atualizar_produto(produto_id : int, produto: produto, db : Session = Depends(get_db),token: str = Depends(oauth2_scheme)):
+    verificar_token(token)
+
+    produto_db = db.query(produtodb).filter(produtodb.id == produto_id).first()
+
+    if not produto_db:
+        raise HTTPException(status_code=404, detail="Produto não encontrado")
+    
+    produto_db.nome = produto.nome
+    produto_db.preco_unitario = produto.preco_unitario
+    produto_db.quantidade = produto.quantidade
+
+    db.commit()
+    db.refresh(produto_db)
+
+    return {"message": "Produto atualizado com sucesso","produto" : produto_db}
+
 @app.get("/produtos", response_model = List[produtoresponse])
 async def read_produtos(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     verificar_token(token)
