@@ -8,7 +8,7 @@ token = ""
 #----------- config grafica--------------
 root = tk.Tk()
 root.title("frontend API Tkinter")
-root.geometry("400x400")
+root.geometry("600x600")
 #-----------------------------------------
 
 #------------ funcao api---------------
