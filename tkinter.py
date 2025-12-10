@@ -1,7 +1,9 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, filedialog
 from tkinter import messagebox
 import requests
+from PIL import Image, ImageTk
+from io import BytesIO
 
 API_URL = "http://127.0.0.1:8000"
 token = ""
@@ -75,6 +77,7 @@ def adicionar_produto():
     if not token:
         messagebox.showwarning("Aviso", "Por favor, faça login primeiro.")
         return
+    global caminho_imagem
     
     nome = entry_nome.get()
     preco = entry_preco.get()
@@ -103,9 +106,37 @@ def adicionar_produto():
     if resp.status_code == 200 or resp.status_code == 201:
         messagebox.showinfo("Sucesso", "Produto adicionado com sucesso!")
         lista_produto() #att lista
+        try:
+            dados = resp.json()
+            produto_id = dados["produto"]["id"]
+        except Exception:
+            messagebox.showwarning("Aviso", "Falha ao obter o ID do produto.")
+            lista_produto()
+            caminho_imagem = None
+            return
+
+        if caminho_imagem:
+            try:
+                import os
+                os.makedirs("imagens", exist_ok=True)
+
+                with open(caminho_imagem, "rb") as f:
+                    files = {"imagem": f}
+                    resp_img = requests.post(f"{API_URL}/produto/{produto_id}/imagem", files=files, headers = {"Authorization": f"Bearer {token}"})
+                    if resp_img.status_code != 200:
+                        messagebox.showwarning("Aviso", "Falha ao enviar imagem do produto.")
+            except Exception as e:
+                messagebox.showerror("Erro", f"Erro ao enviar imagem: {e}")
     else:
-        erro = resp.text
-        messagebox.showerror("Erro", f"Falha ao adicionar produto: {erro}")
+        try:
+            erro = resp.json().get("detail",resp.text)
+        except:
+            erro = resp.text
+            messagebox.showerror("Erro", f"Falha ao adicionar produto: {erro}")
+    
+    caminho_imagem = None
+    lista_produto()
+
 
 
 def remover_produto():
@@ -286,6 +317,59 @@ def click_fora(event):
         if event.widget not in (entry_buscar, listbox_autocomplete):
             esconde_sugestao()
 
+caminho_imagem = None
+
+def selecionar_imagem():
+    global caminho_imagem
+
+    caminho_imagem = filedialog.askopenfilename(title="Selecione a imagem",filetypes=[("Imagens", "*.jpg;*.png;*.jpeg")])
+
+    if caminho_imagem:
+        messagebox.showinfo("Sucesso", "Imagem selecionada com sucesso!")
+
+def mostrar_imagem(event):
+    item = tabela.identify_row(event.y)
+    if not item:
+        return
+    
+    tabela.selection_set(item)
+    
+    valores = tabela.item(item, "values")
+
+    if not valores:
+        return
+    
+    id_produto = valores[0]
+
+    headers = {"Authorization": f"Bearer {token}"}
+
+    try:
+        resp = requests.get(f"{API_URL}/produto/{id_produto}/imagem", headers=headers)
+
+        if resp.status_code == 404:
+            messagebox.showwarning("Aviso", "Imagem não encontrada para este produto.")
+            return
+
+        if resp.status_code != 200:
+            return
+
+        img_data = BytesIO(resp.content)
+        img = Image.open(img_data)
+        img = img.resize((200, 200))
+        img_tk = ImageTk.PhotoImage(img)
+
+        win = tk.Toplevel()
+        win.title(f"Imagem do produto {id_produto}")
+
+        label = tk.Label(win, image=img_tk)
+        label.image = img_tk
+        label.pack()
+
+        root.wait_window(win)
+        
+    except Exception as e:
+            messagebox.showerror("Erro", f"Erro ao abrir imagem: {e}")
+    
 #-----------------------------------------
 
 #------------campo de login ----------------
@@ -337,6 +421,7 @@ scrollbar = ttk.Scrollbar(frame_produtos, orient="vertical", command=tabela.yvie
 tabela.configure(yscrollcommand=scrollbar.set)
 scrollbar.pack(side="right", fill="y")
 
+tabela.bind("<Double-1>", mostrar_imagem)
 #-----------------------------------------------------------
 
 #------------ campos de produto ----------------
@@ -352,8 +437,12 @@ tk.Label(frame_produtos, text="Quantidade:").pack(anchor="sw")
 entry_quantidade = tk.Entry(frame_produtos)
 entry_quantidade.pack(anchor="sw")
 
+btn_imagem = tk.Button(frame_produtos, text="Selecionar Imagem", fg = "green", command=selecionar_imagem)
+btn_imagem.pack(pady=5, anchor="sw")
+
 btn_add_produto = tk.Button(frame_produtos, text="Adicionar Produto", fg = "green", command=adicionar_produto)
 btn_add_produto.pack(pady=5, anchor="sw")
+
 #----------------------------------------------------
 
 #------------ campo de deletar produto ----------------
@@ -384,10 +473,10 @@ btn_salvar.pack(pady=5, anchor="sw")
 #------------ campo de buscar produto ----------------
 tk.Label(frame_produtos, text="Buscar produto:").pack(anchor="sw")
 entry_buscar = tk.Entry(frame_produtos)
-entry_buscar.place(x= 10, y = 650, width=250)
+entry_buscar.place(x= 5, y = 680, width=250)
 
 btn_buscar = tk.Button(frame_produtos, text = "Buscar produto",fg = "green", command = buscar_produto)
-btn_buscar.place(x = 270,y = 650)
+btn_buscar.place(x = 270,y = 680)
 #--------------------------------------------------
 
 #------------ botao logout ----------------
