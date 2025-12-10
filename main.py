@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File
 from pydantic import BaseModel
 from jose import jwt, JWTError 
 from datetime import datetime, timedelta
@@ -11,6 +11,7 @@ from sqlalchemy import Column, Integer, Float
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
 from sqlalchemy import String
 from typing import List
+from fastapi.responses import FileResponse
 
 #------------config basica do FastAPI----------------
 app = FastAPI(
@@ -45,6 +46,7 @@ class produtodb(Base):
     nome = Column(String(100))
     preco_unitario = Column(Float)
     quantidade = Column(Integer)
+    imagem = Column(String, nullable = True)
 
 Base.metadata.create_all(bind=engine)
 ## ------------------------------------
@@ -60,8 +62,9 @@ class produtoresponse(BaseModel):
     nome : str
     preco_unitario: float
     quantidade: int
+    imagem : str | None = None
 
-    class config:
+    class Config:
         orm_mode = True
 
 class ProdutoCriadoResponse(BaseModel):
@@ -208,6 +211,51 @@ async def deletar_produto(produto_id: int, token: str = Depends(oauth2_scheme), 
     db.delete(produto)
     db.commit()
     return {"message": "Produto deletado com sucesso"}
+
+@app.get("/produto/{id}", response_model = produtoresponse)
+async def get_produto(id:int, token: str = Depends(oauth2_scheme), db:Session = Depends(get_db)):
+    verificar_token(token)
+
+    produto = db.query(produtodb).filter(produtodb.id == id).first()
+
+    if not produto:
+        raise HTTPException(status_code=404, detail="Produto não encontrado")
+    return produto
+    
+
+@app.post("/produto/{id}/imagem")
+async def upload_imagem(id: int, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db), imagem: UploadFile = File(...)):
+    verificar_token(token)
+    
+    conteudo = await imagem.read()
+
+    caminho = f"imagens/produto_{id}.jpg"
+
+    with open(caminho, "wb") as f:
+        f.write(conteudo)
+        
+    produto = db.query(produtodb).filter(produtodb.id == id).first()
+
+    if not produto:
+        raise HTTPException(status_code=404, detail="Produto não encontrado")
+    
+    produto.imagem = caminho
+    db.commit()
+    db.refresh(produto)
+
+    return {"message": "ok", "caminho" : caminho}
+
+@app.get("/produto/{id}/imagem")
+async def get_imagem(id:int, token : str = Depends(oauth2_scheme),db: Session = Depends(get_db)):
+    verificar_token(token)
+
+    produto = db.query(produtodb).filter(produtodb.id == id).first()
+
+    if not produto or not produto.imagem:
+        raise HTTPException(status_code=404, detail="Imagem não encontrada")
+    
+    return FileResponse(produto.imagem)
+    
 
 @app.middleware("http")
 async def log_requests(request, call_next):
