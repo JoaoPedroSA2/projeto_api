@@ -12,6 +12,7 @@ from sqlalchemy.orm import sessionmaker, declarative_base, Session
 from sqlalchemy import String
 from typing import List
 from fastapi.responses import FileResponse
+import os
 
 #------------config basica do FastAPI----------------
 app = FastAPI(
@@ -208,6 +209,13 @@ async def deletar_produto(produto_id: int, token: str = Depends(oauth2_scheme), 
     if not produto:
         raise HTTPException(status_code=404, detail="Produto não encontrado")
     
+    if produto.imagem:
+        try:
+            if os.path.exists(produto.imagem):
+                os.remove(produto.imagem)
+        except Exception as e:
+            print(f"Erro ao excluir imagem: {e}")
+
     db.delete(produto)
     db.commit()
     return {"message": "Produto deletado com sucesso"}
