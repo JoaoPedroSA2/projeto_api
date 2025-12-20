@@ -4,6 +4,8 @@ from tkinter import messagebox
 import requests
 from PIL import Image, ImageTk
 from io import BytesIO
+import customtkinter as ctk
+import csv
 
 API_URL = "http://127.0.0.1:8000"
 token = ""
@@ -145,7 +147,7 @@ def remover_produto():
         return
     
     id_produto = entry_delete.get()
-
+    
     if not id_produto:
         messagebox.showwarning("Aviso", "Por favor, insira o ID do produto para deletar.")
         return
@@ -182,6 +184,9 @@ def toggle_senha():
         entry_pass.config(show="")
 
 def editar_produto():
+    global caminho_imagem
+    caminho_imagem = None
+
     item = tabela.focus()
     valores = tabela.item(item, "values")
     
@@ -234,6 +239,20 @@ def salvar_edicao():
         return
     
     if resp.status_code == 200:
+            if caminho_imagem:
+                try:
+                    with open(caminho_imagem, "rb") as f:
+                        files = {"imagem": f}
+                        resp_img = requests.post(
+                            f"{API_URL}/produto/{produto_id_editado}/imagem",
+                            files=files,
+                            headers={"Authorization": f"Bearer {token}"}
+                        )
+                        if resp_img.status_code != 200:
+                            messagebox.showwarning("Aviso", "Falha ao enviar imagem do produto.")
+                except Exception as e:
+                    messagebox.showerror("Erro", f"Erro ao enviar imagem: {e}")
+                    return
             messagebox.showinfo("Sucesso", "Produto editado com sucesso!")
             lista_produto()
     else:
@@ -369,7 +388,51 @@ def mostrar_imagem(event):
         
     except Exception as e:
             messagebox.showerror("Erro", f"Erro ao abrir imagem: {e}")
+
+def exportar_csv():
+    if not token:
+        messagebox.showwarning("Aviso", "Por favor, faça login primeiro.")
+        return
     
+    headers = {"Authorization": f"Bearer {token}"} 
+
+    try:
+        resp = requests.get(f"{API_URL}/produtos", headers=headers)
+        if resp.status_code != 200:
+            messagebox.showerror("Aviso","Não foi possivel obter dados da API")
+            return
+        produtos = resp.json()
+    except Exception as e:
+        messagebox.showerror("Erro", f"Erro ao conectar à API: {e}")
+        return 
+    
+    caminho_arquivo = filedialog.asksaveasfilename(
+        defaultextension=".csv",
+        filetypes=[("Arquivos CSV", "*.csv")],
+        title="Salvar relatorio de Estoque"
+    )
+    if not caminho_arquivo:
+        return
+    
+    try:
+        with open(caminho_arquivo,mode = "w",newline="", encoding= "utf-8-sig") as f:
+            escritor = csv.writer(f, delimiter= ";")
+
+            escritor.writerow(["ID","Nome do Produto", "Preço Unitario", "Quantidade", "Valor em Estoque"])
+
+            for p in produtos:
+                valor_estoque = p["preco_unitario"] * p["quantidade"]
+                escritor.writerow([[
+                    p["id"],
+                    p["nome"],
+                    f"{p["preco_unitario"]:.2f}".replace(".","."),
+                    p["quantidade"],
+                    f"{valor_estoque:.2f}".replace(".", ".")
+                ]])
+        messagebox.showinfo("Sucesso", "Relatorio exportado com sucesso!")
+    except Exception as e:
+        messagebox.showerror("Erro", f"Erro ao exportar relatorio: {e}")  
+
 #-----------------------------------------
 
 #------------campo de login ----------------
@@ -483,6 +546,10 @@ btn_buscar.place(x = 270,y = 680)
 btn_logout = tk.Button(frame_produtos, text="Logout", bg = "red", fg = "white",command=logout)
 btn_logout.pack(pady=10, anchor="se")
 #--------------------------------------------------------------
+
+#------------ botao exportar csv ----------------
+btn_exportar = tk.Button(frame_produtos, text="Exportar CSV", fg = "green", command=exportar_csv)
+btn_exportar.pack(pady=10, anchor="nw", padx= 10)
 
 #------------------binds autocomplete----------------------
 entry_buscar.bind("<KeyRelease>", autocomplete)
